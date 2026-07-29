@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { canTransitionMasterStock } from "@/lib/permissions";
 import { nextSalesSeq, fiscalYearFor } from "@/lib/sequences";
 import { MasterStockStatus } from "@/generated/prisma/enums";
+import type { Prisma } from "@/generated/prisma/client";
 
 const transitionSchema = z.object({
   target: z.enum(MasterStockStatus),
@@ -22,8 +23,10 @@ const transitionSchema = z.object({
   cutLength: z.coerce.number().positive().optional(),
 });
 
-// Single state-machine entry point for every Master Stock status change — mirrors the
-// plan's design so the same shape can be reused once Phase 2 hooks into Sold routing.
+// Single state-machine entry point for every Master Stock status change. On a
+// transition to SOLD, also auto-creates the Phase 2 production-path row (Cutting/
+// Slitting/Trading) that salesType routes to — replacing the AppSheet bot
+// "Update sales order number and update cutting or splitting table".
 export async function transitionMasterStock(id: string, formData: FormData) {
   const session = await auth();
   if (!session?.user || !canTransitionMasterStock(session.user.role)) {
@@ -47,6 +50,7 @@ export async function transitionMasterStock(id: string, formData: FormData) {
     throw new Error(parsed.error.issues.map((i) => i.message).join(", "));
   }
   const data = parsed.data;
+  const changedBy = session.user.email ?? "unknown";
 
   const current = await prisma.masterStock.findUniqueOrThrow({ where: { id } });
 
@@ -72,7 +76,7 @@ export async function transitionMasterStock(id: string, formData: FormData) {
           entityId: id,
           fromStatus: current.status,
           toStatus: data.target,
-          changedBy: session.user.email ?? "unknown",
+          changedBy,
         },
       }),
     ]);
@@ -86,21 +90,19 @@ export async function transitionMasterStock(id: string, formData: FormData) {
       "Production Weight, Customer, Sale Price and Sales Type are required to change status"
     );
   }
-
-  let salesPoNumber = current.salesPoNumber;
-  if (data.target === "SOLD") {
-    if (!data.requestedDeliveryDate) {
-      throw new Error("Requested Delivery Date is required to mark Sold");
-    }
-    const fy = fiscalYearFor(new Date());
-    salesPoNumber = await prisma.$transaction(async (tx) => {
-      const seq = await nextSalesSeq(tx, fy);
-      return `ZSPL/SO/${fy}/${seq}`;
-    });
+  if (data.target === "SOLD" && !data.requestedDeliveryDate) {
+    throw new Error("Requested Delivery Date is required to mark Sold");
   }
 
-  await prisma.$transaction([
-    prisma.masterStock.update({
+  await prisma.$transaction(async (tx) => {
+    let salesPoNumber = current.salesPoNumber;
+    if (data.target === "SOLD") {
+      const fy = fiscalYearFor(new Date());
+      const seq = await nextSalesSeq(tx, fy);
+      salesPoNumber = `ZSPL/SO/${fy}/${seq}`;
+    }
+
+    const updated = await tx.masterStock.update({
       where: { id },
       data: {
         status: data.target,
@@ -119,18 +121,92 @@ export async function transitionMasterStock(id: string, formData: FormData) {
         salesPoNumber: salesPoNumber ?? undefined,
         length: data.cutLength ?? undefined,
       },
-    }),
-    prisma.statusHistory.create({
+    });
+
+    await tx.statusHistory.create({
       data: {
         entityType: "MasterStock",
         entityId: id,
         fromStatus: current.status,
         toStatus: data.target,
-        changedBy: session.user.email ?? "unknown",
+        changedBy,
       },
-    }),
-  ]);
+    });
+
+    if (data.target === "SOLD") {
+      await routeToProductionPath(tx, updated, changedBy);
+    }
+  });
 
   revalidatePath("/master-stock");
   revalidatePath(`/master-stock/${id}`);
+}
+
+async function routeToProductionPath(
+  tx: Prisma.TransactionClient,
+  stock: Prisma.MasterStockGetPayload<Record<string, never>>,
+  createdBy: string
+) {
+  const salesType = (stock.salesType ?? "").toLowerCase();
+  const common = {
+    masterStockId: stock.id,
+    customerId: stock.customerId,
+    zsplId: stock.zsplId,
+    itemType: stock.itemType,
+    grade: stock.grade,
+    mill: stock.mill,
+    thickness: stock.thickness,
+    width: stock.width,
+    coating: stock.coating,
+    temper: stock.temper,
+    finish: stock.finish,
+    bayLocation: stock.bayLocation,
+    createdBy,
+  };
+
+  if (salesType === "cutting") {
+    await tx.cuttingOrderSummary.create({
+      data: {
+        ...common,
+        netWt: stock.netWt,
+        productionWt: stock.productionWeight ?? undefined,
+        soldPrice: stock.salePrice ?? undefined,
+        salesRemark: stock.salesRemark,
+        requestedDeliveryDate: stock.requestedDeliveryDate ?? undefined,
+        availableWeight: stock.availableWeight,
+        length: stock.length ?? undefined, // cut length, if already set on Master Stock
+        coilId: stock.coilId,
+        coilLength: stock.coilLength ?? undefined,
+        productionStatus: stock.length ? "PENDING_PRODUCTION" : "INPUT_CUT_LENGTH",
+      },
+    });
+  } else if (salesType === "slitting") {
+    // No availableWeight/split fields here — SlittingOrderSummary tracks splits at the
+    // SlittingProductionData level, not the order level.
+    await tx.slittingOrderSummary.create({
+      data: {
+        ...common,
+        netWt: stock.netWt,
+        productionWt: stock.productionWeight ?? undefined,
+        soldPrice: stock.salePrice ?? undefined,
+        salesRemark: stock.salesRemark,
+        requiredDeliveryDate: stock.requestedDeliveryDate ?? undefined,
+      },
+    });
+  } else if (salesType === "trading") {
+    // TradingSummary has no productionWt/soldPrice/salesRemark/netWt fields — it's a
+    // simpler pass-through model, just netWeight.
+    await tx.tradingSummary.create({
+      data: {
+        ...common,
+        availableWeight: stock.availableWeight,
+        length: stock.length ?? undefined,
+        netWeight: stock.netWt,
+        itemForm: stock.itemForm,
+      },
+    });
+  }
+  // Unrecognized salesType: leave Master Stock as Sold with no downstream row rather
+  // than guessing a routing — matches the "never silently coerce" principle used
+  // throughout the migration scripts.
 }

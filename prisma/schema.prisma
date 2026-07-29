@@ -24,6 +24,7 @@ enum Role {
   STORES
   REVIEWER
   SALES
+  PRODUCTION
   VIEWER
 }
 
@@ -34,6 +35,33 @@ model User {
   passwordHash String
   role         Role     @default(PENDING)
   createdAt    DateTime @default(now())
+
+  notifications       Notification[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   String
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +129,13 @@ model Customer {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  masterStocks MasterStock[]
+  masterStocks         MasterStock[]
+  cuttingOrders        CuttingOrderSummary[]
+  slittingOrders       SlittingOrderSummary[]
+  tradingSummaries     TradingSummary[]
+  dispatchesAsCustomer DispatchSummary[]       @relation("DispatchCustomer")
+  dispatchesAsBuyer    DispatchSummary[]       @relation("DispatchBuyer")
+  dispatchesAsConsignee DispatchSummary[]      @relation("DispatchConsignee")
 
   @@index([legalName])
 }
@@ -381,6 +415,10 @@ model MasterStock {
   createdBy String
   updatedAt DateTime @updatedAt
 
+  cuttingOrders    CuttingOrderSummary[]
+  slittingOrders   SlittingOrderSummary[]
+  tradingSummaries TradingSummary[]
+
   @@index([status])
   @@index([customerId])
   @@index([originalMasterStockId])
@@ -398,4 +436,440 @@ model StatusHistory {
   note       String?
 
   @@index([entityType, entityId])
+}
+
+// ---------------------------------------------------------------------------
+// Sequences used by the Phase 2 sales-order/work-order numbering below.
+// ---------------------------------------------------------------------------
+
+model WorkOrderSequence {
+  year    Int    @id
+  lastSeq Int    @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — Cutting production
+// Master Stock status -> SOLD with salesType "Cutting" auto-creates one of these
+// (see transitionMasterStock). Flow: fill production-planning fields -> approve
+// (-> Daily Cutting queue) -> Machine Production + Quality Data entries as the coil
+// is actually cut -> Bundlewise Data rows (lettered A/B/C.., "XX" reject / "YY" scrap)
+// -> Finished Goods Cutting Summary -> selected into Dispatch Summary.
+// ---------------------------------------------------------------------------
+
+enum ProductionStatus {
+  INPUT_CUT_LENGTH
+  PENDING_PRODUCTION
+  COMPLETED
+}
+
+model CuttingOrderSummary {
+  id             String   @id @default(cuid())
+  workOrderNo    String?
+  salesOrderNo   String?
+  salesOrderDate DateTime @default(now())
+
+  masterStockId String
+  masterStock   MasterStock @relation(fields: [masterStockId], references: [id])
+  customerId    String?
+  customer      Customer?   @relation(fields: [customerId], references: [id])
+
+  zsplId    String
+  itemType  String
+  grade     String
+  mill      String
+  thickness Decimal  @db.Decimal(10, 3)
+  width     Decimal  @db.Decimal(10, 3)
+  length    Decimal? @db.Decimal(10, 3) // cut length — required before production planning
+  coating   String
+  temper    String
+  finish    String
+
+  netWt        Decimal  @db.Decimal(12, 3)
+  productionWt Decimal? @db.Decimal(12, 3)
+  soldPrice    Decimal? @db.Decimal(12, 2)
+  salesRemark  String?
+
+  requestedDeliveryDate DateTime?
+  productionPlanDate    DateTime?
+  productionStatus      ProductionStatus @default(INPUT_CUT_LENGTH)
+
+  packingType         String?
+  noOfSheetsPerPallet Decimal? @db.Decimal(10, 2)
+  wtPerBundle         Decimal? @db.Decimal(10, 3)
+  noOfBundles         Int?     @default(1)
+  productionSequence  Int?
+
+  approvedBy String?
+  approvedAt DateTime?
+
+  bayLocation String?
+  coilId      String?
+  coilLength  Decimal? @db.Decimal(10, 3)
+
+  availableWeight Decimal @db.Decimal(12, 3)
+  noOfSplits      Int     @default(0)
+
+  originalCuttingOrderId String?
+  originalCuttingOrder   CuttingOrderSummary?  @relation("CuttingSplits", fields: [originalCuttingOrderId], references: [id])
+  splitChildren          CuttingOrderSummary[] @relation("CuttingSplits")
+
+  createdAt DateTime @default(now())
+  createdBy String
+  updatedAt DateTime @updatedAt
+
+  machineProductions MachineProduction[]
+  qualityData        QualityData[]
+  bundlewiseData     BundlewiseData[]
+  dispatchSummaries  DispatchSummary[]
+
+  @@index([productionStatus])
+  @@index([masterStockId])
+  @@index([originalCuttingOrderId])
+}
+
+model MachineProduction {
+  id              String              @id @default(cuid())
+  cuttingOrderId  String
+  cuttingOrder    CuttingOrderSummary @relation(fields: [cuttingOrderId], references: [id])
+
+  shift               String?
+  mainOperator        String?
+  assistantOperator   String?
+  coilFeedingOperator String?
+
+  setupStartTime      DateTime?
+  productionStartTime DateTime?
+  productionEndTime   DateTime? // filled -> triggers move to "Completed" / FG Cutting Summary
+
+  feedingType String?
+
+  actualNetWeight  Decimal? @db.Decimal(12, 3)
+  actualWidth      Decimal? @db.Decimal(10, 3)
+  actualThickness  Decimal? @db.Decimal(10, 3)
+  tolerance        Decimal? @db.Decimal(10, 3)
+  squareness       String?
+  bowEntry         Decimal? @db.Decimal(10, 3)
+  bowExit          Decimal? @db.Decimal(10, 3)
+  speed            String?
+
+  palletReady Boolean @default(false)
+  breakdown        Boolean @default(false)
+  breakdownRemark  String?
+  quality          Boolean @default(false)
+  qualityRemark    String?
+
+  actualCoilLength  Decimal? @db.Decimal(10, 3)
+  totalSheets       Int?
+  totalPrimeSheets  Int?
+  totalRejectSheets Int?
+  pinhole           Int?
+  undergauge        String?
+  overgauge         String?
+  visualDefects     String?
+  partCoil          String?
+  downtime          Decimal? @db.Decimal(10, 2)
+  palletRemark      String?
+
+  createdAt DateTime @default(now())
+  createdBy String
+
+  @@index([cuttingOrderId])
+}
+
+model QualityData {
+  id             String              @id @default(cuid())
+  cuttingOrderId String
+  cuttingOrder   CuttingOrderSummary @relation(fields: [cuttingOrderId], references: [id])
+
+  hardness               Decimal? @db.Decimal(10, 2)
+  actualTemper           String?
+  cuppingValue           Decimal? @db.Decimal(10, 3)
+  sheetSize              Decimal? @db.Decimal(10, 2)
+  bow                    String?
+  squareness             String?
+  defectsObserved        String?
+  underDeviationApproval Boolean  @default(false)
+  loadPictureUrl         String?
+
+  createdAt DateTime @default(now())
+  createdBy String
+
+  @@index([cuttingOrderId])
+}
+
+enum BundleStatus {
+  PENDING
+  APPROVED
+}
+
+model BundlewiseData {
+  id             String              @id @default(cuid())
+  cuttingOrderId String
+  cuttingOrder   CuttingOrderSummary @relation(fields: [cuttingOrderId], references: [id])
+
+  bundleIdNo String // lettered A, B, C… or "XX" reject / "YY" scrap placeholder bundles
+
+  cutLength     Decimal?  @db.Decimal(10, 3)
+  coilNetWt     Decimal?  @db.Decimal(12, 3)
+  productionDate DateTime @default(now())
+  preparedBy    String?
+  reviewedBy    String?
+  noOfSheets    Int?
+  palletWeight  Decimal?  @db.Decimal(10, 3)
+  grossBundleWt Decimal?  @db.Decimal(12, 3)
+  netBundleWt   Decimal?  @db.Decimal(12, 3) // gross - pallet
+
+  status BundleStatus @default(PENDING) // Approved -> eligible for Finished Goods / Dispatch
+
+  availableWeight Decimal @db.Decimal(12, 3)
+  noOfSplits      Int     @default(0)
+
+  originalBundleId String?
+  originalBundle   BundlewiseData?  @relation("BundleSplits", fields: [originalBundleId], references: [id])
+  splitChildren    BundlewiseData[] @relation("BundleSplits")
+
+  dispatchLocation String?
+  doNumber         String?
+
+  createdAt DateTime @default(now())
+  createdBy String
+
+  dispatchSummaries DispatchSummary[]
+
+  @@index([cuttingOrderId])
+  @@index([status])
+  @@index([originalBundleId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — Slitting production (coil-based: slit widths/counts, no cut length)
+// ---------------------------------------------------------------------------
+
+enum SlittingProductionStatus {
+  PENDING
+  COMPLETED
+}
+
+model SlittingOrderSummary {
+  id             String   @id @default(cuid())
+  workOrderNo    String?
+  salesOrderNo   String?
+  salesOrderDate DateTime @default(now())
+
+  masterStockId String
+  masterStock   MasterStock @relation(fields: [masterStockId], references: [id])
+  customerId    String?
+  customer      Customer?   @relation(fields: [customerId], references: [id])
+
+  zsplId    String
+  itemType  String
+  grade     String
+  mill      String?
+  thickness Decimal @db.Decimal(10, 3)
+  width     Decimal @db.Decimal(10, 3)
+  coating   String
+  temper    String
+  finish    String
+
+  netWt        Decimal  @db.Decimal(12, 3)
+  productionWt Decimal? @db.Decimal(12, 3)
+  soldPrice    Decimal? @db.Decimal(12, 2)
+  salesRemark  String?
+
+  requiredDeliveryDate DateTime?
+
+  slit1     Decimal? @db.Decimal(10, 3)
+  slit2     Decimal? @db.Decimal(10, 3)
+  slit3     Decimal? @db.Decimal(10, 3)
+  slit4     Decimal? @db.Decimal(10, 3)
+  noOfSlit1 Int?
+  noOfSlit2 Int?
+  noOfSlit3 Int?
+  noOfSlit4 Int?
+
+  productionPlanDate DateTime?
+  vendorName         String?
+  productionStatus   SlittingProductionStatus @default(PENDING)
+  numberOfBundles    Int?
+
+  jobWorkVendorName String?
+  truckNo           String?
+
+  slittingCustomerMasterSerial1 String?
+  slittingCustomerMasterSerial2 String?
+  slittingCustomerMasterSerial3 String?
+  slittingCustomerMasterSerial4 String?
+
+  bayLocation String?
+
+  createdAt DateTime @default(now())
+  createdBy String
+  updatedAt DateTime @updatedAt
+
+  slittingProductionData SlittingProductionData[]
+  dispatchSummaries      DispatchSummary[]
+
+  @@index([productionStatus])
+  @@index([masterStockId])
+}
+
+model SlittingProductionData {
+  id              String               @id @default(cuid())
+  slittingOrderId String
+  slittingOrder   SlittingOrderSummary @relation(fields: [slittingOrderId], references: [id])
+
+  bundleIdNo    String // lettered a, b, c… per bundle produced
+  slitWidth     Decimal? @db.Decimal(10, 3)
+  noOfSlitCoils Int?
+  netWt         Decimal? @db.Decimal(12, 3)
+  grossWt       Decimal? @db.Decimal(12, 3)
+
+  availableWeight Decimal @db.Decimal(12, 3)
+  noOfSplits      Int     @default(0)
+
+  originalSlitId String?
+  originalSlit   SlittingProductionData?  @relation("SlitSplits", fields: [originalSlitId], references: [id])
+  splitChildren  SlittingProductionData[] @relation("SlitSplits")
+
+  createdAt DateTime @default(now())
+  createdBy String
+
+  dispatchSummaries DispatchSummary[]
+
+  @@index([slittingOrderId])
+  @@index([originalSlitId])
+}
+
+model SlittingCustomerMaster {
+  id                String  @id @default(cuid())
+  thickness         Decimal @db.Decimal(10, 3)
+  slittingSize      Decimal? @db.Decimal(10, 3)
+  widthTolerance    String?
+  noOfSlitPerPallet Int
+  slitWt            String?
+  slitCoilId        String?
+  slitStrapingType  String?
+  documentReference String?
+  customerName      String?
+  palletSize        String?
+  remarks           String?
+
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — Trading (simpler pass-through repackaging of Master Stock for resale)
+// ---------------------------------------------------------------------------
+
+model TradingSummary {
+  id            String      @id @default(cuid())
+  masterStockId String
+  masterStock   MasterStock @relation(fields: [masterStockId], references: [id])
+  salesOrderNo  String?
+  customerId    String?
+  customer      Customer?   @relation(fields: [customerId], references: [id])
+
+  zsplId    String
+  itemType  String
+  grade     String
+  mill      String?
+  thickness Decimal  @db.Decimal(10, 3)
+  width     Decimal  @db.Decimal(10, 3)
+  length    Decimal? @db.Decimal(10, 3)
+  coating   String
+  temper    String
+  finish    String
+
+  noOfSheets  String?
+  netWeight   Decimal  @db.Decimal(12, 3)
+  grossWeight Decimal? @db.Decimal(12, 3)
+
+  dispatchLocation String?
+  doNo             String?
+  doDate           DateTime?
+
+  availableWeight Decimal @db.Decimal(12, 3)
+  noOfSplits      Int     @default(0)
+
+  originalTradingId String?
+  originalTrading   TradingSummary?  @relation("TradingSplits", fields: [originalTradingId], references: [id])
+  splitChildren     TradingSummary[] @relation("TradingSplits")
+
+  itemForm    String?
+  bayLocation String?
+
+  createdAt DateTime @default(now())
+  createdBy String
+  updatedAt DateTime @updatedAt
+
+  dispatchSummaries DispatchSummary[]
+
+  @@index([masterStockId])
+  @@index([originalTradingId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Dispatch (consolidates finished goods from all 3 production paths,
+// grouped by DO number) and reference data it depends on.
+// ---------------------------------------------------------------------------
+
+model Transporter {
+  id    String  @id @default(cuid())
+  name  String  @unique
+  gstNo String?
+}
+
+model DispatchSummary {
+  id String @id @default(cuid())
+
+  cuttingBundleId      String?
+  cuttingBundle        BundlewiseData?         @relation(fields: [cuttingBundleId], references: [id])
+  slittingProductionId String?
+  slittingProduction   SlittingProductionData? @relation(fields: [slittingProductionId], references: [id])
+  tradingId            String?
+  trading              TradingSummary?         @relation(fields: [tradingId], references: [id])
+  cuttingOrderId        String?
+  cuttingOrder          CuttingOrderSummary?   @relation(fields: [cuttingOrderId], references: [id])
+  slittingOrderId       String?
+  slittingOrder         SlittingOrderSummary?  @relation(fields: [slittingOrderId], references: [id])
+
+  doNumber String
+  doDate   DateTime @default(now())
+
+  customerId String?
+  customer   Customer? @relation("DispatchCustomer", fields: [customerId], references: [id])
+
+  finalZsplId    String?
+  itemType       String?
+  thickness      Decimal? @db.Decimal(10, 3)
+  width          Decimal? @db.Decimal(10, 3)
+  cutLength      Decimal? @db.Decimal(10, 3)
+  origin         String?
+  coating        String?
+  temper         String?
+  finish         String?
+  netWeight      Decimal? @db.Decimal(12, 3)
+  grossWeight    Decimal? @db.Decimal(12, 3)
+  numberOfSheets Int?
+  bundleNetWeight Decimal? @db.Decimal(12, 3)
+  remarks        String?
+  dispatchStatus String  @default("Pending")
+
+  buyerId     String?
+  buyer       Customer? @relation("DispatchBuyer", fields: [buyerId], references: [id])
+  consigneeId String?
+  consignee   Customer? @relation("DispatchConsignee", fields: [consigneeId], references: [id])
+
+  transporterName String?
+  vehicleNumber   String?
+  lorryWeight     Decimal? @db.Decimal(10, 2)
+
+  packingListCreated Boolean @default(false)
+  packingListUrl     String?
+
+  createdAt DateTime @default(now())
+  createdBy String
+
+  @@index([doNumber])
+  @@index([dispatchStatus])
 }

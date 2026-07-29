@@ -33,6 +33,15 @@ export async function nextZsplSeq(tx: Tx): Promise<number> {
   return rows[0].lastSeq;
 }
 
+export async function nextWorkOrderSeq(tx: Tx, year: number): Promise<number> {
+  const rows = await tx.$queryRaw<{ lastSeq: number }[]>`
+    INSERT INTO "WorkOrderSequence" (year, "lastSeq") VALUES (${year}, 1)
+    ON CONFLICT (year) DO UPDATE SET "lastSeq" = "WorkOrderSequence"."lastSeq" + 1
+    RETURNING "lastSeq"
+  `;
+  return rows[0].lastSeq;
+}
+
 // Indian FY: Apr(4)-Mar(3), formatted as "25-26" style 2-digit-2-digit.
 export function fiscalYearFor(date: Date): string {
   const year = date.getFullYear();

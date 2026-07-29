@@ -1,13 +1,23 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
+import { getRecentNotifications, getUnreadNotificationCount } from "@/lib/notifications";
+import { NotificationBell } from "./notifications/NotificationBell";
 
 const NAV_ITEMS: { href: string; label: string }[] = [
   { href: "/", label: "Home" },
   { href: "/purchase-orders", label: "Purchase Orders" },
   { href: "/inward", label: "Inward" },
   { href: "/master-stock", label: "Master Stock" },
+  { href: "/production/cutting", label: "Cutting Orders" },
+  { href: "/production/finished-goods/cutting", label: "FG Cutting" },
+  { href: "/production/slitting", label: "Slitting Orders" },
+  { href: "/production/finished-goods/slitting", label: "FG Slitting" },
+  { href: "/production/trading", label: "Trading Summary" },
+  { href: "/dispatch", label: "Dispatch Summary" },
   { href: "/masters/customers", label: "Customers" },
+  { href: "/masters/transporters", label: "Transporters" },
+  { href: "/masters/slitting-customers", label: "Slitting Customer Master" },
   { href: "/masters/dropdowns", label: "Dropdowns" },
   { href: "/masters/coating-temper", label: "Coating/Temper Map" },
   { href: "/masters/users", label: "Users" },
@@ -50,6 +60,11 @@ export default async function DashboardLayout({
     );
   }
 
+  const [notifications, unreadCount] = await Promise.all([
+    getRecentNotifications(session.user.id),
+    getUnreadNotificationCount(session.user.id),
+  ]);
+
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-200 bg-neutral-900 text-neutral-100">
@@ -86,7 +101,12 @@ export default async function DashboardLayout({
           </form>
         </div>
       </aside>
-      <main className="flex-1 bg-neutral-50 p-8">{children}</main>
+      <div className="flex flex-1 flex-col">
+        <header className="flex justify-end border-b border-neutral-200 bg-white px-8 py-3">
+          <NotificationBell notifications={notifications} unreadCount={unreadCount} />
+        </header>
+        <main className="flex-1 bg-neutral-50 p-8">{children}</main>
+      </div>
     </div>
   );
 }

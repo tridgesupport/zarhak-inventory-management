@@ -8,7 +8,11 @@ import { auth } from "@/lib/auth";
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isAuthRoute =
-    pathname.startsWith("/api/auth") || pathname === "/login" || pathname === "/signup";
+    pathname.startsWith("/api/auth") ||
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password";
   if (isAuthRoute) return NextResponse.next();
 
   const session = await auth();

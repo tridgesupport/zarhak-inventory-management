@@ -41,3 +41,13 @@ export function canSplitMasterStock(role: Role) {
 export function isPending(role: Role) {
   return role === "PENDING";
 }
+
+// Phase 2/3 — production planning, machine ops, quality, and dispatch all fall
+// under PRODUCTION (shop-floor roles); ADMIN can always do everything.
+export function canManageProduction(role: Role) {
+  return role === "ADMIN" || role === "PRODUCTION";
+}
+
+export function canDispatch(role: Role) {
+  return role === "ADMIN" || role === "SALES" || role === "PRODUCTION";
+}
