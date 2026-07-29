@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "InwardRecord" ALTER COLUMN "webCoating" DROP NOT NULL,
+ALTER COLUMN "webTemper" DROP NOT NULL,
+ALTER COLUMN "iGrWt" DROP NOT NULL;
+
+-- AlterTable
+ALTER TABLE "MasterStock" ALTER COLUMN "webCoating" DROP NOT NULL,
+ALTER COLUMN "webTemper" DROP NOT NULL;

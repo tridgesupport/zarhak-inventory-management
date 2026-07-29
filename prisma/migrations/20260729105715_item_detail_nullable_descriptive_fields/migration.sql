@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "ItemDetail" ALTER COLUMN "vendorName" DROP NOT NULL,
+ALTER COLUMN "steelType" DROP NOT NULL,
+ALTER COLUMN "purchasePrice" DROP NOT NULL,
+ALTER COLUMN "productCategory" DROP NOT NULL;

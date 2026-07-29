@@ -1,0 +1,438 @@
+// Zarhak Inventory Management — Phase 1 schema
+// See /Users/hardik.parikh/.claude/plans/i-am-attaching-a-streamed-thimble.md for the design rationale.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth (Auth.js / NextAuth v5 standard Prisma adapter schema)
+// ---------------------------------------------------------------------------
+
+enum Role {
+  PENDING
+  ADMIN
+  PROCUREMENT
+  STORES
+  REVIEWER
+  SALES
+  VIEWER
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role      @default(PENDING)
+  createdAt     DateTime  @default(now())
+
+  accounts Account[]
+  sessions Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Master / reference data
+// ---------------------------------------------------------------------------
+
+// Mirrors the AppSheet "Dropdown and Master List" mega-table's self-service-append
+// behavior: any user can add a new allowed value with no schema migration needed.
+enum LookupDomain {
+  PO_TYPE
+  PO_GRADE
+  TYPE_OF_STEEL
+  ITEM_TYPE
+  ITEM_NAME
+  VENDOR_NAME
+  MILL
+  WEB_COATING
+  COATING
+  WEB_TEMPER
+  TEMPER
+  GRADE
+  FINISH
+  ANNEALED_TYPE
+  COIL_ID
+  PRODUCT_CATEGORY
+  PURCHASE_TYPE
+  DELIVERY_LOCATION
+  STATE_NAME
+  UNLOADED_BY
+  REVIEWED_BY
+  BAY_LOCATION
+  SALES_TYPE
+  FACTORY_LOCATION
+  END_USE
+  OPERATOR
+  ASSISTANT_OPERATOR
+  ORIGIN
+  COIL_FEEDING_OPERATOR
+  ORDER_CATEGORY
+  SHIP_TO
+}
+
+model LookupValue {
+  id        String       @id @default(cuid())
+  domain    LookupDomain
+  value     String
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  createdBy String?
+
+  @@unique([domain, value])
+  @@index([domain])
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  alpha       String?
+  legalName   String // "Consignee/Buyer" in the source app
+  displayName String // packing-list-facing name (user-requested addition)
+  address     String?
+  gstin       String?
+  zsplCode    String?
+  location    String?
+  stateName   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  masterStocks MasterStock[]
+
+  @@index([legalName])
+}
+
+// Two independent 1:1 lookups, NOT one joint (coating, temper) -> (webCoating,
+// webTemper) mapping. Confirmed against the real production data and the source
+// app's own formulas: Web Coating = LOOKUP(Coating in "Dropdown and Master List"),
+// Web Temper = LOOKUP(Temper in "Dropdown and Master List") — two separate
+// single-column lookups that happen to sit in adjacent sheet columns, not a composite
+// key. Modeled here as two small tables instead of one to match that reality.
+model CoatingMapping {
+  coating    String @id
+  webCoating String
+}
+
+model TemperMapping {
+  temper    String  @id
+  webTemper Decimal @db.Decimal(10, 3)
+}
+
+// ---------------------------------------------------------------------------
+// Atomic sequence counters (replace AppSheet's racy MAX()+1 pattern)
+// ---------------------------------------------------------------------------
+
+model PoSequence {
+  fy      String @id
+  lastSeq Int    @default(0)
+}
+
+model SalesSequence {
+  fy      String @id
+  lastSeq Int    @default(0)
+}
+
+model ZsplSequence {
+  key     String @id @default("global")
+  lastSeq Int    @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Procurement
+// ---------------------------------------------------------------------------
+
+enum POStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id            String   @id @default(cuid())
+  poNumber      String   @unique
+  poSeq         Int
+  fy            String
+  poDate        DateTime @default(now())
+  orderType     String   @default("PO")
+  poType        String
+  poGrade       String
+  typeOfSteel   String
+  vendorName    String
+  shipTo        String
+  mill          String
+  orderCategory String
+  status        POStatus @default(OPEN)
+  remark        String?
+  createdAt     DateTime @default(now())
+  createdBy     String
+  updatedAt     DateTime @updatedAt
+
+  items         ItemDetail[]
+  inwardRecords InwardRecord[]
+
+  @@index([fy])
+  @@index([status])
+}
+
+enum ItemType {
+  ETP
+  TFS
+  TMBP
+  A
+  OTHER
+}
+
+enum ItemStatus {
+  PENDING
+  MATCHED
+  RECEIVED
+}
+
+model ItemDetail {
+  id              String     @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  // App-computed composite match key (see lib/matching.ts) — replaces the source
+  // app's manual, error-prone "Concatenate Item details" field.
+  concatenateKey String
+
+  itemType        ItemType
+  thickness       Decimal    @db.Decimal(10, 3)
+  width           Decimal    @db.Decimal(10, 3)
+  length          Decimal?   @db.Decimal(10, 3) // null for coil-form items (only bundles have a cut length)
+  coating         String
+  temper          String
+  finish          String
+  grade           String
+  annealedType    String?
+  vendorIdNo      String?
+  qtyMt           Decimal    @db.Decimal(12, 3)
+  coilId          String?
+  // Historical data commonly leaves these blank (confirmed in the real production
+  // export) — nullable rather than rejecting a decade of real rows on import.
+  vendorName      String?
+  steelType       String?
+  purchasePrice   Decimal?   @db.Decimal(12, 2)
+  productCategory String?
+  itemRemark      String?
+  itemStatus      ItemStatus @default(PENDING)
+  bundleCoil      String // app-computed: "B" if coilId set else "C"
+  itemName        String // app-computed from itemType map
+  sleeveType      String?
+  endUse          String?
+  poReportUrl     String? // placeholder only — no PDF generation in Phase 1
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  inwardMatches InwardRecord[]
+
+  @@index([purchaseOrderId])
+  @@index([concatenateKey])
+}
+
+// ---------------------------------------------------------------------------
+// Goods receipt (Inward)
+// ---------------------------------------------------------------------------
+
+model InwardRecord {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  matchedItemId String?
+  matchedItem   ItemDetail? @relation(fields: [matchedItemId], references: [id])
+
+  concatenatedId String // same recipe as ItemDetail.concatenateKey
+
+  dispatchDate DateTime?
+  itemType     String
+  grade        String
+  thickness    Decimal   @db.Decimal(10, 3)
+  width        Decimal   @db.Decimal(10, 3)
+  length       Decimal?  @db.Decimal(10, 3)
+  mill         String
+  coating      String
+  temper       String
+  finish       String
+
+  netWt      Decimal  @db.Decimal(12, 3)
+  coilLength Decimal? @db.Decimal(10, 3)
+  noOfSheets Int?
+  coilId     String?
+  vendorName String
+  vehicleNo  String
+  vendorIdNo String?
+  heatNo     String?
+  millTc     String?
+
+  // app-computed via CoatingTemperMapping at create — nullable since the lookup can
+  // legitimately fail to resolve (no mapping row for that coating yet)
+  webCoating String?
+  webTemper  Decimal? @db.Decimal(10, 3)
+
+  iGrWt         Decimal? @db.Decimal(12, 3) // filled by Stores during physical unloading, not at CSV import time
+  inwardRemarks String?
+  bayLocation   String?
+  purchaseType  String
+
+  unloadedBy String?
+  reviewBy   String?
+
+  unloadTime       DateTime? // app-set once, on first unloadedBy null->set transition
+  unloadedInwardNo String?
+
+  vendorInvoiceNo String?
+  vendorInvDate   DateTime?
+
+  bundleCoil String
+  seq        Int?
+  zsplId     String  @unique
+  annealedType String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  masterStockRows MasterStock[]
+
+  @@index([purchaseOrderId])
+  @@index([matchedItemId])
+  @@index([reviewBy])
+}
+
+// ---------------------------------------------------------------------------
+// Master Stock — the central inventory/allocation pool
+// ---------------------------------------------------------------------------
+
+enum MasterStockStatus {
+  AVAILABLE
+  OFFERED
+  BOOKED
+  SOLD
+  CANCELLED
+}
+
+model MasterStock {
+  id       String        @id @default(cuid())
+  inwardId String?
+  inward   InwardRecord? @relation(fields: [inwardId], references: [id])
+
+  zsplId       String
+  vendorName   String
+  purchaseType String
+  unloadDate   DateTime
+
+  itemType  String
+  mill      String
+  grade     String
+  thickness Decimal  @db.Decimal(10, 3)
+  width     Decimal  @db.Decimal(10, 3)
+  length    Decimal? @db.Decimal(10, 3)
+
+  webCoating String?
+  coating    String
+  webTemper  Decimal? @db.Decimal(10, 3)
+  temper     String
+  finish     String
+
+  inwardRemarks String?
+  coilId        String?
+
+  netWt      Decimal @db.Decimal(12, 3) // relabeled "I Gr Wt" per the source app's own note
+  noOfSheets String?
+  itemForm   String
+
+  purchasePrice Decimal @db.Decimal(12, 2) // copied at creation, not re-derived live
+
+  salesDate             DateTime?
+  customerId            String?
+  customer              Customer? @relation(fields: [customerId], references: [id])
+  customerPoNo          String?
+  customerPoDate        DateTime?
+  endUse                String?
+  productionWeight      Decimal?  @db.Decimal(12, 3)
+  salePrice             Decimal?  @db.Decimal(12, 2)
+  salesRemark           String?
+  requestedDeliveryDate DateTime?
+  deliveryLocation      String?
+  salesType             String? // drives Phase 2 routing: Cutting/Slitting/Trading
+  actualDispatchDate    DateTime?
+
+  availableWeight Decimal @db.Decimal(12, 3)
+  noOfSplits      Int     @default(0)
+
+  originalMasterStockId String?
+  originalMasterStock   MasterStock?  @relation("Splits", fields: [originalMasterStockId], references: [id])
+  splitChildren         MasterStock[] @relation("Splits")
+
+  status        MasterStockStatus @default(AVAILABLE)
+  salesPoNumber String?
+
+  serialNumber Int?
+  annealed     String?
+  coilLength   Decimal? @db.Decimal(10, 3)
+  bayLocation  String?
+
+  createdAt DateTime @default(now())
+  createdBy String
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([customerId])
+  @@index([originalMasterStockId])
+  @@index([zsplId])
+}
+
+model StatusHistory {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  fromStatus String?
+  toStatus   String
+  changedBy  String
+  changedAt  DateTime @default(now())
+  note       String?
+
+  @@index([entityType, entityId])
+}
