@@ -38,18 +38,28 @@ export default async function DispatchSummaryPage() {
                 {items[0]?.transporterName ? ` · ${items[0].transporterName}` : ""}
                 {items[0]?.vehicleNumber ? ` · ${items[0].vehicleNumber}` : ""}
               </div>
-              {canManage && (
-                <form action={createPackingList.bind(null, doNumber)}>
-                  <button
-                    type="submit"
-                    className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-                  >
-                    {items[0]?.packingListCreated
-                      ? "Regenerate Packing List"
-                      : "Create Packing List"}
-                  </button>
-                </form>
-              )}
+              <div className="flex items-center gap-2">
+                <a
+                  href={`/api/pdf/packing-list/${encodeURIComponent(doNumber)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                >
+                  Packing List (PDF)
+                </a>
+                {canManage && (
+                  <form action={createPackingList.bind(null, doNumber)}>
+                    <button
+                      type="submit"
+                      className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                    >
+                      {items[0]?.packingListCreated
+                        ? "Regenerate Packing List"
+                        : "Create Packing List"}
+                    </button>
+                  </form>
+                )}
+              </div>
             </div>
             <table className="mt-2 min-w-full text-sm">
               <thead className="text-left text-xs uppercase text-neutral-500">

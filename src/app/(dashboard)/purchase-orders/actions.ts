@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canEditPO } from "@/lib/permissions";
 import { nextPoSeq, fiscalYearFor } from "@/lib/sequences";
+import { encodeIdForUrl } from "@/lib/urlId";
 
 const schema = z.object({
   orderType: z.string().min(1),
@@ -69,5 +70,5 @@ export async function createPurchaseOrder(formData: FormData) {
   });
 
   revalidatePath("/purchase-orders");
-  redirect(`/purchase-orders/${po.id}`);
+  redirect(`/purchase-orders/${encodeIdForUrl(po.id)}`);
 }

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canImportItemDetails } from "@/lib/permissions";
+import { decodeIdFromUrl } from "@/lib/urlId";
 import { ImportForm } from "./ImportForm";
 
 export default async function ImportItemDetailsPage({
@@ -10,10 +11,11 @@ export default async function ImportItemDetailsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
+  const { id: rawId } = await params;
+  const id = decodeIdFromUrl(rawId);
   const session = await auth();
   if (!session?.user || !canImportItemDetails(session.user.role)) {
-    redirect(`/purchase-orders/${id}`);
+    redirect(`/purchase-orders/${rawId}`);
   }
 
   const po = await prisma.purchaseOrder.findUnique({ where: { id } });

@@ -63,14 +63,26 @@ export default async function CuttingOrderDetailPage({
             {order.productionStatus}
           </p>
         </div>
-        {canManage && order.availableWeight.greaterThan(0) && (
-          <Link
-            href={`/production/cutting/${order.id}/split`}
-            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-          >
-            Split
-          </Link>
-        )}
+        <div className="flex gap-2">
+          {order.bundlewiseData.length > 0 && (
+            <a
+              href={`/api/pdf/bundle-slip/${order.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            >
+              Bundle Slip (PDF)
+            </a>
+          )}
+          {canManage && order.availableWeight.greaterThan(0) && (
+            <Link
+              href={`/production/cutting/${order.id}/split`}
+              className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            >
+              Split
+            </Link>
+          )}
+        </div>
       </div>
 
       {length > 0 && (

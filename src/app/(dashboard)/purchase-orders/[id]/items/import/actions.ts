@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canImportItemDetails } from "@/lib/permissions";
 import { parseItemDetailsCsv, type ParsedItemDetailRow } from "@/lib/csv/itemDetails";
+import { encodeIdForUrl } from "@/lib/urlId";
 
 export async function previewItemDetailsImport(poId: string, formData: FormData) {
   const session = await auth();
@@ -64,6 +65,7 @@ export async function commitItemDetailsImport(
     })),
   });
 
-  revalidatePath(`/purchase-orders/${poId}`);
-  redirect(`/purchase-orders/${poId}`);
+  const encodedPoId = encodeIdForUrl(poId);
+  revalidatePath(`/purchase-orders/${encodedPoId}`);
+  redirect(`/purchase-orders/${encodedPoId}`);
 }

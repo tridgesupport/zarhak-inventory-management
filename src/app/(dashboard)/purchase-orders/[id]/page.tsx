@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { decodeIdFromUrl, encodeIdForUrl } from "@/lib/urlId";
 
 export default async function PurchaseOrderDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
+  const { id: rawId } = await params;
+  const id = decodeIdFromUrl(rawId);
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id },
@@ -33,12 +35,22 @@ export default async function PurchaseOrderDetailPage({
             {po.vendorName} · {po.mill} · {po.shipTo} · Status: {po.status}
           </p>
         </div>
-        <Link
-          href={`/purchase-orders/${po.id}/items/import`}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-        >
-          Import Item Details
-        </Link>
+        <div className="flex gap-2">
+          <a
+            href={`/api/pdf/po-report/${encodeIdForUrl(po.id)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            PO Report (PDF)
+          </a>
+          <Link
+            href={`/purchase-orders/${encodeIdForUrl(po.id)}/items/import`}
+            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            Import Item Details
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6 grid grid-cols-4 gap-4">

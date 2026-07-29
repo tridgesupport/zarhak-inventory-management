@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canEditPO } from "@/lib/permissions";
+import { encodeIdForUrl } from "@/lib/urlId";
 
 export default async function PurchaseOrdersPage() {
   const session = await auth();
@@ -66,7 +67,7 @@ export default async function PurchaseOrdersPage() {
                 <tr key={po.id} className="border-t border-neutral-100">
                   <td className="px-4 py-2">
                     <Link
-                      href={`/purchase-orders/${po.id}`}
+                      href={`/purchase-orders/${encodeIdForUrl(po.id)}`}
                       className="font-medium text-neutral-900 underline"
                     >
                       {po.poNumber}
