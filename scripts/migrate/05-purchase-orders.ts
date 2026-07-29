@@ -1,4 +1,4 @@
-import { prisma, readSheet, s, n, d, MigrationReport } from "./lib";
+import { prisma, readSheet, s, n, d, MigrationReport, mapConcurrent } from "./lib";
 import { POStatus } from "../../src/generated/prisma/enums";
 
 const STATUS_MAP: Record<string, POStatus> = {
@@ -13,8 +13,7 @@ export async function migratePurchaseOrders(report: MigrationReport) {
   let imported = 0;
   let skipped = 0;
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  await mapConcurrent(rows, 15, async (row, i) => {
     const rowNum = i + 2;
     const poNumber = s(row["Purchase Order No."]);
 
@@ -60,7 +59,7 @@ export async function migratePurchaseOrders(report: MigrationReport) {
       // new POs created post-migration don't collide with historical numbers.
       await prisma.poSequence.upsert({
         where: { fy },
-        update: { lastSeq: { increment: 0 } },
+        update: {},
         create: { fy, lastSeq: poSeq },
       });
       const seqRow = await prisma.poSequence.findUnique({ where: { fy } });
@@ -78,7 +77,7 @@ export async function migratePurchaseOrders(report: MigrationReport) {
       );
       skipped++;
     }
-  }
+  });
 
   report.recordCounts("Purchase Orders", rows.length, imported, skipped);
 }

@@ -106,3 +106,21 @@ export function chunk<T>(arr: T[], size: number): T[][] {
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
+
+// Against a remote DB (Neon), per-row round-trip latency dominates — a fully
+// sequential loop over tens of thousands of rows can take hours. Each row's own
+// try/catch already isolates its errors (they're recorded on the report, not
+// thrown), so processing a batch concurrently is safe: nothing here depends on
+// write-ordering between unrelated rows.
+export async function mapConcurrent<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  for (const batch of chunk(
+    items.map((item, index) => ({ item, index })),
+    concurrency
+  )) {
+    await Promise.all(batch.map(({ item, index }) => fn(item, index)));
+  }
+}

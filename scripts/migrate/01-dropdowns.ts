@@ -1,4 +1,4 @@
-import { prisma, readSheet, s, MigrationReport } from "./lib";
+import { prisma, readSheet, s, MigrationReport, mapConcurrent } from "./lib";
 import { LookupDomain } from "../../src/generated/prisma/enums";
 
 // Maps the source "Dropdown and Master List" mega-table's columns onto our
@@ -54,14 +54,14 @@ export async function migrateDropdowns(report: MigrationReport) {
   }
 
   let imported = 0;
-  for (const item of toInsert) {
+  await mapConcurrent(toInsert, 20, async (item) => {
     await prisma.lookupValue.upsert({
       where: { domain_value: { domain: item.domain, value: item.value } },
       update: {},
       create: { domain: item.domain, value: item.value, createdBy: "migration" },
     });
     imported++;
-  }
+  });
 
   report.recordCounts("Dropdown and Master List", rows.length, imported, 0);
 }

@@ -7,7 +7,8 @@ import { auth } from "@/lib/auth";
 // signed-in gate; role-based checks live in lib/permissions.ts at the server-action level.
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const isAuthRoute = pathname.startsWith("/api/auth") || pathname === "/login";
+  const isAuthRoute =
+    pathname.startsWith("/api/auth") || pathname === "/login" || pathname === "/signup";
   if (isAuthRoute) return NextResponse.next();
 
   const session = await auth();

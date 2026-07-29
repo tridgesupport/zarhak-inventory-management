@@ -1,4 +1,5 @@
 import "dotenv/config";
+import bcrypt from "bcryptjs";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { LookupDomain } from "../src/generated/prisma/enums";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -52,15 +53,23 @@ const LOOKUP_SEED: Record<LookupDomain, string[]> = {
 };
 
 async function main() {
+  const adminEmail = "tridgebusiness@gmail.com";
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || "ChangeMe123!";
+  const passwordHash = await bcrypt.hash(adminPassword, 12);
+
   await prisma.user.upsert({
-    where: { email: "tridgebusiness@gmail.com" },
-    update: { role: "ADMIN" },
+    where: { email: adminEmail },
+    update: { role: "ADMIN", passwordHash },
     create: {
-      email: "tridgebusiness@gmail.com",
+      email: adminEmail,
       name: "Hardik (Admin)",
+      passwordHash,
       role: "ADMIN",
     },
   });
+  console.log(
+    `Seeded admin ${adminEmail} — password: ${adminPassword} (change it after first login; set SEED_ADMIN_PASSWORD to override)`
+  );
 
   for (const [domain, values] of Object.entries(LOOKUP_SEED) as [
     LookupDomain,

@@ -1,4 +1,4 @@
-import { prisma, readSheet, s, n, d, MigrationReport } from "./lib";
+import { prisma, readSheet, s, n, d, MigrationReport, mapConcurrent } from "./lib";
 import { MasterStockStatus } from "../../src/generated/prisma/enums";
 
 const STATUS_MAP: Record<string, MasterStockStatus> = {
@@ -27,8 +27,7 @@ export async function migrateMasterStock(report: MigrationReport) {
   const pendingParentLinks: { id: string; originalRaw: string }[] = [];
 
   // Pass 1: create every row with no self-reference yet.
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  await mapConcurrent(rows, 20, async (row, i) => {
     const rowNum = i + 2;
     const id = s(row["master_stock_unique_id"]);
 
@@ -123,7 +122,7 @@ export async function migrateMasterStock(report: MigrationReport) {
       );
       skipped++;
     }
-  }
+  });
 
   // Pass 2: now every row exists, resolve self-references.
   const allIds = new Set(
@@ -131,7 +130,7 @@ export async function migrateMasterStock(report: MigrationReport) {
   );
   let linked = 0;
   let unresolvedLinks = 0;
-  for (const link of pendingParentLinks) {
+  await mapConcurrent(pendingParentLinks, 20, async (link) => {
     if (!allIds.has(link.originalRaw)) {
       report.recordError(
         "Master Stock (split links)",
@@ -140,14 +139,14 @@ export async function migrateMasterStock(report: MigrationReport) {
         `Original Master stock ID "${link.originalRaw}" not found — link skipped`
       );
       unresolvedLinks++;
-      continue;
+      return;
     }
     await prisma.masterStock.update({
       where: { id: link.id },
       data: { originalMasterStockId: link.originalRaw },
     });
     linked++;
-  }
+  });
 
   report.recordCounts("Master Stock", rows.length, imported, skipped);
   report.recordCounts("Master Stock (split links)", pendingParentLinks.length, linked, unresolvedLinks);

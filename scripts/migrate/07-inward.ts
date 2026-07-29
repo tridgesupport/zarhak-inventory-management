@@ -1,4 +1,4 @@
-import { prisma, readSheet, s, n, d, MigrationReport } from "./lib";
+import { prisma, readSheet, s, n, d, MigrationReport, mapConcurrent } from "./lib";
 
 // Plain data copy — historical Inward rows already have their real reviewBy/
 // unloadedBy/matchedItemId state, and the Master Stock rows they produced already
@@ -18,8 +18,7 @@ export async function migrateInward(report: MigrationReport) {
   let imported = 0;
   let skipped = 0;
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  await mapConcurrent(rows, 20, async (row, i) => {
     const rowNum = i + 2;
     const uniqueInwardItem = s(row["unique_inward_item"]);
 
@@ -101,7 +100,7 @@ export async function migrateInward(report: MigrationReport) {
       );
       skipped++;
     }
-  }
+  });
 
   report.recordCounts("Inward CSV", rows.length, imported, skipped);
 }

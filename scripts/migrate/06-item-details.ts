@@ -1,4 +1,4 @@
-import { prisma, readSheet, s, n, MigrationReport } from "./lib";
+import { prisma, readSheet, s, n, MigrationReport, mapConcurrent } from "./lib";
 import { ItemType } from "../../src/generated/prisma/enums";
 
 const ITEM_TYPE_MAP: Record<string, ItemType> = {
@@ -19,8 +19,7 @@ export async function migrateItemDetails(report: MigrationReport) {
   let imported = 0;
   let skipped = 0;
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  await mapConcurrent(rows, 20, async (row, i) => {
     const rowNum = i + 2;
     const uniqueItemId = s(row["unique_itemid"]);
 
@@ -90,7 +89,7 @@ export async function migrateItemDetails(report: MigrationReport) {
       );
       skipped++;
     }
-  }
+  });
 
   report.recordCounts("Item Details", rows.length, imported, skipped);
 }
