@@ -34,17 +34,27 @@ export default async function FinishedGoodsCuttingPage() {
       <div className="mt-4 space-y-3">
         {bundles.map((b) => (
           <div key={b.id} className="rounded-lg border border-neutral-200 bg-white p-4">
-            <div className="text-sm">
-              <span className="font-medium text-neutral-900">
-                {b.cuttingOrder.zsplId}-{b.bundleIdNo}
-              </span>{" "}
-              <span className="text-neutral-500">
-                · {b.cuttingOrder.customer?.displayName ?? "—"} ·{" "}
-                {b.cuttingOrder.thickness.toString()}x{b.cuttingOrder.width.toString()}
-                {b.cutLength ? `x${b.cutLength.toString()}` : ""} ·{" "}
-                {b.cuttingOrder.coating}/{b.cuttingOrder.temper} · Net{" "}
-                {b.netBundleWt?.toString() ?? "—"} MT
-              </span>
+            <div className="flex items-center justify-between text-sm">
+              <div>
+                <span className="font-medium text-neutral-900">
+                  {b.cuttingOrder.zsplId}-{b.bundleIdNo}
+                </span>{" "}
+                <span className="text-neutral-500">
+                  · {b.cuttingOrder.customer?.displayName ?? "—"} ·{" "}
+                  {b.cuttingOrder.thickness.toString()}x{b.cuttingOrder.width.toString()}
+                  {b.cutLength ? `x${b.cutLength.toString()}` : ""} ·{" "}
+                  {b.cuttingOrder.coating}/{b.cuttingOrder.temper} · Net{" "}
+                  {b.netBundleWt?.toString() ?? "—"} MT
+                </span>
+              </div>
+              <a
+                href={`/api/pdf/coil-label/cutting/${b.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 text-xs text-neutral-500 underline"
+              >
+                Coil Label (PDF)
+              </a>
             </div>
             {canSend && (
               <form

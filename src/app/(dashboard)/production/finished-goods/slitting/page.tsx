@@ -32,13 +32,23 @@ export default async function FinishedGoodsSlittingPage() {
       <div className="mt-4 space-y-3">
         {rows.map((r) => (
           <div key={r.id} className="rounded-lg border border-neutral-200 bg-white p-4">
-            <div className="text-sm">
-              <span className="font-medium text-neutral-900">{r.bundleIdNo}</span>{" "}
-              <span className="text-neutral-500">
-                · {r.slittingOrder.customer?.displayName ?? "—"} · Slit Width{" "}
-                {r.slitWidth?.toString() ?? "—"} · {r.slittingOrder.coating}/
-                {r.slittingOrder.temper} · Net {r.netWt?.toString() ?? "—"} MT
-              </span>
+            <div className="flex items-center justify-between text-sm">
+              <div>
+                <span className="font-medium text-neutral-900">{r.bundleIdNo}</span>{" "}
+                <span className="text-neutral-500">
+                  · {r.slittingOrder.customer?.displayName ?? "—"} · Slit Width{" "}
+                  {r.slitWidth?.toString() ?? "—"} · {r.slittingOrder.coating}/
+                  {r.slittingOrder.temper} · Net {r.netWt?.toString() ?? "—"} MT
+                </span>
+              </div>
+              <a
+                href={`/api/pdf/coil-label/slitting/${r.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 text-xs text-neutral-500 underline"
+              >
+                Coil Label (PDF)
+              </a>
             </div>
             {canSend && (
               <form
