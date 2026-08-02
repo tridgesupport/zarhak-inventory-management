@@ -1,7 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { canChangePOStatus } from "@/lib/permissions";
 import { decodeIdFromUrl, encodeIdForUrl } from "@/lib/urlId";
+import { transitionPOStatus } from "../actions";
+
+const STATUS_OPTIONS = [
+  { value: "OPEN", label: "Open" },
+  { value: "IN_PROCESS", label: "In Process" },
+  { value: "CLOSED", label: "Closed" },
+  { value: "CANCELLED", label: "Cancelled" },
+] as const;
 
 export default async function PurchaseOrderDetailPage({
   params,
@@ -10,12 +20,19 @@ export default async function PurchaseOrderDetailPage({
 }) {
   const { id: rawId } = await params;
   const id = decodeIdFromUrl(rawId);
+  const session = await auth();
+  const canChangeStatus = session?.user ? canChangePOStatus(session.user.role) : false;
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id },
     include: { items: { orderBy: { createdAt: "desc" } } },
   });
   if (!po) notFound();
+
+  const history = await prisma.statusHistory.findMany({
+    where: { entityType: "PurchaseOrder", entityId: id },
+    orderBy: { changedAt: "desc" },
+  });
 
   const received = await prisma.inwardRecord.aggregate({
     where: { purchaseOrderId: po.id },
@@ -100,6 +117,53 @@ export default async function PurchaseOrderDetailPage({
           </tbody>
         </table>
       </div>
+
+      {canChangeStatus && (
+        <div className="mt-8 rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-sm font-semibold text-neutral-700">Change status</h2>
+          <form
+            action={transitionPOStatus.bind(null, po.id)}
+            className="mt-4 flex flex-wrap items-end gap-4"
+          >
+            <label className="block">
+              <span className="block text-xs font-medium text-neutral-500">
+                Target status
+              </span>
+              <select
+                name="target"
+                defaultValue={po.status}
+                className="mt-1 w-48 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+              >
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="rounded-md bg-neutral-900 px-5 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+            >
+              Save
+            </button>
+          </form>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-sm font-semibold text-neutral-700">Status history</h2>
+          <ul className="mt-2 space-y-1 text-sm text-neutral-600">
+            {history.map((h) => (
+              <li key={h.id}>
+                {h.fromStatus ?? "—"} → {h.toStatus} by {h.changedBy} at{" "}
+                {h.changedAt.toISOString()}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

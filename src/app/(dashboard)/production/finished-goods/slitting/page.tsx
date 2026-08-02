@@ -1,7 +1,7 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canDispatch } from "@/lib/permissions";
-import { dispatchSlittingProduction } from "@/app/(dashboard)/dispatch/actions";
 
 export default async function FinishedGoodsSlittingPage() {
   const session = await auth();
@@ -17,17 +17,28 @@ export default async function FinishedGoodsSlittingPage() {
     take: 200,
   });
 
-  const customers = await prisma.customer.findMany({ orderBy: { displayName: "asc" } });
-  const transporters = await prisma.transporter.findMany({ orderBy: { name: "asc" } });
-
   return (
     <div>
-      <h1 className="text-xl font-semibold text-neutral-900">
-        Finished Goods — Slitting
-      </h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Completed slitting production not yet assigned to a dispatch.
-      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-900">
+            Finished Goods — Slitting
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Completed slitting production not yet assigned to a dispatch. Use the
+            Dispatch wizard to send items — from here or any other Finished Goods
+            screen — to a DO.
+          </p>
+        </div>
+        {canSend && (
+          <Link
+            href="/dispatch/new"
+            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            Create Dispatch
+          </Link>
+        )}
+      </div>
 
       <div className="mt-4 space-y-3">
         {rows.map((r) => (
@@ -50,57 +61,6 @@ export default async function FinishedGoodsSlittingPage() {
                 Coil Label (PDF)
               </a>
             </div>
-            {canSend && (
-              <form
-                action={dispatchSlittingProduction.bind(null, r.id)}
-                className="mt-2 flex flex-wrap items-end gap-2"
-              >
-                <input
-                  name="doNumber"
-                  placeholder="DO Number"
-                  required
-                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
-                />
-                <input
-                  name="doDate"
-                  type="date"
-                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
-                />
-                <select
-                  name="buyerId"
-                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
-                >
-                  <option value="">Buyer…</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.displayName}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  name="transporterName"
-                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
-                >
-                  <option value="">Transporter…</option>
-                  {transporters.map((t) => (
-                    <option key={t.id} value={t.name}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  name="vehicleNumber"
-                  placeholder="Vehicle No."
-                  className="w-24 rounded-md border border-neutral-300 px-2 py-1 text-xs"
-                />
-                <button
-                  type="submit"
-                  className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-800"
-                >
-                  Send to Dispatch
-                </button>
-              </form>
-            )}
           </div>
         ))}
         {rows.length === 0 && (

@@ -65,14 +65,40 @@ export default async function CuttingOrderDetailPage({
         </div>
         <div className="flex gap-2">
           {order.bundlewiseData.length > 0 && (
-            <a
-              href={`/api/pdf/bundle-slip/${order.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-            >
-              Bundle Slip (PDF)
-            </a>
+            <>
+              <a
+                href={`/api/pdf/bundle-slip/${order.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Bundle Slip (PDF)
+              </a>
+              <a
+                href={`/api/pdf/sorting/${order.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Sorting (PDF)
+              </a>
+              <a
+                href={`/api/pdf/coil-order/${order.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Coil Order (PDF)
+              </a>
+              <a
+                href={`/api/pdf/pallet/${order.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Pallet (PDF)
+              </a>
+            </>
           )}
           {canManage && order.availableWeight.greaterThan(0) && (
             <Link

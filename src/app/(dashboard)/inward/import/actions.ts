@@ -137,6 +137,15 @@ export async function commitInwardImport(rows: InwardPreviewRow[]) {
       const seq = await nextZsplSeq(tx);
       const zsplId = `ZSPL${fy.replace("-", "")}${String(seq).padStart(5, "0")}`;
 
+      if (r.matchedItemId) {
+        // Same "matched" transition as the manual resolveMatch action, for rows the
+        // import auto-matched (exactly one candidate) rather than needing a human pick.
+        await tx.itemDetail.update({
+          where: { id: r.matchedItemId },
+          data: { itemStatus: "MATCHED" },
+        });
+      }
+
       await tx.inwardRecord.create({
         data: {
           purchaseOrderId: r.purchaseOrderId!,

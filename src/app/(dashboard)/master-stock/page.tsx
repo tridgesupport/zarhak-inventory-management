@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { MasterStockStatus } from "@/generated/prisma/enums";
+import { DataTable, type DataTableColumnDef, type DataTableRow } from "@/components/DataTable";
 
 const TABS: { key: MasterStockStatus | "ALL"; label: string }[] = [
   { key: "AVAILABLE", label: "Available" },
@@ -24,6 +25,49 @@ export default async function MasterStockPage({
     orderBy: { createdAt: "desc" },
     include: { customer: { select: { displayName: true } } },
     take: 200,
+  });
+
+  const columns: DataTableColumnDef[] = [
+    { key: "zsplId", header: "ZSPL ID" },
+    { key: "itemType", header: "Item Type", filterable: true },
+    { key: "spec", header: "Spec" },
+    { key: "netWt", header: "Net Wt", align: "right" },
+    { key: "availableWeight", header: "Available Wt", align: "right" },
+    { key: "customer", header: "Customer", filterable: true },
+    { key: "salesType", header: "Sales Type", filterable: true },
+    { key: "bay", header: "Bay" },
+    { key: "open", header: "" },
+  ];
+
+  const dataRows: DataTableRow[] = rows.map((r) => {
+    const spec = `${r.thickness.toString()}x${r.width.toString()} ${r.coating}/${r.temper}`;
+    const customerName = r.customer?.displayName ?? "—";
+    return {
+      key: r.id,
+      cells: {
+        zsplId: <span className="font-medium">{r.zsplId}</span>,
+        itemType: r.itemType,
+        spec,
+        netWt: r.netWt.toString(),
+        availableWeight: r.availableWeight.toString(),
+        customer: customerName,
+        salesType: r.salesType ?? "—",
+        bay: r.bayLocation ?? "—",
+        open: (
+          <Link href={`/master-stock/${r.id}`} className="text-xs text-neutral-700 underline">
+            Open
+          </Link>
+        ),
+      },
+      search: {
+        zsplId: r.zsplId,
+        itemType: r.itemType,
+        spec,
+        customer: customerName,
+        salesType: r.salesType ?? "",
+        bay: r.bayLocation ?? "",
+      },
+    };
   });
 
   return (
@@ -50,56 +94,8 @@ export default async function MasterStockPage({
         ))}
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-xs uppercase text-neutral-500">
-            <tr>
-              <th className="px-3 py-2">ZSPL ID</th>
-              <th className="px-3 py-2">Item Type</th>
-              <th className="px-3 py-2">Spec</th>
-              <th className="px-3 py-2 text-right">Net Wt</th>
-              <th className="px-3 py-2 text-right">Available Wt</th>
-              <th className="px-3 py-2">Customer</th>
-              <th className="px-3 py-2">Sales Type</th>
-              <th className="px-3 py-2">Bay</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-neutral-100">
-                <td className="px-3 py-2 font-medium">{r.zsplId}</td>
-                <td className="px-3 py-2">{r.itemType}</td>
-                <td className="px-3 py-2">
-                  {r.thickness.toString()}x{r.width.toString()} {r.coating}/
-                  {r.temper}
-                </td>
-                <td className="px-3 py-2 text-right">{r.netWt.toString()}</td>
-                <td className="px-3 py-2 text-right">
-                  {r.availableWeight.toString()}
-                </td>
-                <td className="px-3 py-2">{r.customer?.displayName ?? "—"}</td>
-                <td className="px-3 py-2">{r.salesType ?? "—"}</td>
-                <td className="px-3 py-2">{r.bayLocation ?? "—"}</td>
-                <td className="px-3 py-2">
-                  <Link
-                    href={`/master-stock/${r.id}`}
-                    className="text-xs text-neutral-700 underline"
-                  >
-                    Open
-                  </Link>
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-4 py-6 text-center text-neutral-400">
-                  Nothing here.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-4">
+        <DataTable columns={columns} rows={dataRows} />
       </div>
     </div>
   );

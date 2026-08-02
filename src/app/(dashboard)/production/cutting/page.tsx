@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { ProductionStatus } from "@/generated/prisma/enums";
+import { DataTable, type DataTableColumnDef, type DataTableRow } from "@/components/DataTable";
 
 const TABS: { key: ProductionStatus | "ALL"; label: string }[] = [
   { key: "INPUT_CUT_LENGTH", label: "Input Cut Length" },
@@ -9,20 +10,77 @@ const TABS: { key: ProductionStatus | "ALL"; label: string }[] = [
   { key: "ALL", label: "All" },
 ];
 
+function dayRange(dateStr: string) {
+  const start = new Date(`${dateStr}T00:00:00.000Z`);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { gte: start, lt: end };
+}
+
+function shiftDate(dateStr: string, days: number) {
+  const d = new Date(`${dateStr}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export default async function CuttingOrderSummaryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; date?: string }>;
 }) {
-  const { status = "INPUT_CUT_LENGTH" } = await searchParams;
-  const where =
+  const { status = "INPUT_CUT_LENGTH", date } = await searchParams;
+  const statusWhere =
     status === "ALL" ? {} : { productionStatus: status as ProductionStatus };
+  const dateWhere = date ? { productionPlanDate: dayRange(date) } : {};
+  const where = { ...statusWhere, ...dateWhere };
 
   const orders = await prisma.cuttingOrderSummary.findMany({
     where,
     orderBy: [{ productionSequence: "asc" }, { createdAt: "desc" }],
     include: { customer: { select: { displayName: true } } },
     take: 200,
+  });
+
+  const columns: DataTableColumnDef[] = [
+    { key: "zsplId", header: "ZSPL ID" },
+    { key: "customer", header: "Customer", filterable: true },
+    { key: "spec", header: "Spec" },
+    { key: "netWt", header: "Wt (MT)", align: "right" },
+    { key: "planDate", header: "Plan Date" },
+    { key: "approved", header: "Approved", filterable: true },
+    { key: "open", header: "" },
+  ];
+
+  const dataRows: DataTableRow[] = orders.map((o) => {
+    const spec = `${o.thickness.toString()}x${o.width.toString()}${o.length ? `x${o.length.toString()}` : ""} ${o.coating}/${o.temper}`;
+    const customerName = o.customer?.displayName ?? "—";
+    const planDate = o.productionPlanDate?.toISOString().slice(0, 10) ?? "—";
+    return {
+      key: o.id,
+      cells: {
+        zsplId: <span className="font-medium">{o.zsplId}</span>,
+        customer: customerName,
+        spec,
+        netWt: o.netWt.toString(),
+        planDate,
+        approved: o.approvedBy ?? "—",
+        open: (
+          <Link
+            href={`/production/cutting/${o.id}`}
+            className="text-xs text-neutral-700 underline"
+          >
+            Open
+          </Link>
+        ),
+      },
+      search: {
+        zsplId: o.zsplId,
+        customer: customerName,
+        spec,
+        planDate,
+        approved: o.approvedBy ? "Approved" : "Not approved",
+      },
+    };
   });
 
   return (
@@ -33,68 +91,72 @@ export default async function CuttingOrderSummaryPage({
         track through Daily Cutting → Completed.
       </p>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {TABS.map((t) => (
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {TABS.map((t) => (
+            <Link
+              key={t.key}
+              href={`/production/cutting?status=${t.key}${date ? `&date=${date}` : ""}`}
+              className={`rounded-md px-3 py-1.5 text-sm ${
+                status === t.key
+                  ? "bg-neutral-900 text-white"
+                  : "bg-white text-neutral-700 border border-neutral-200"
+              }`}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-neutral-500">Plan date:</span>
+          {date && (
+            <Link
+              href={`/production/cutting?status=${status}&date=${shiftDate(date, -1)}`}
+              className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+            >
+              ← Prev
+            </Link>
+          )}
+          <form action="/production/cutting" method="get" className="flex items-center gap-1">
+            <input type="hidden" name="status" value={status} />
+            <input
+              type="date"
+              name="date"
+              defaultValue={date ?? ""}
+              className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
+            />
+            <button
+              type="submit"
+              className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+            >
+              Go
+            </button>
+          </form>
+          {date && (
+            <Link
+              href={`/production/cutting?status=${status}&date=${shiftDate(date, 1)}`}
+              className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+            >
+              Next →
+            </Link>
+          )}
           <Link
-            key={t.key}
-            href={`/production/cutting?status=${t.key}`}
-            className={`rounded-md px-3 py-1.5 text-sm ${
-              status === t.key
-                ? "bg-neutral-900 text-white"
-                : "bg-white text-neutral-700 border border-neutral-200"
-            }`}
+            href={`/production/cutting?status=${status}&date=${new Date().toISOString().slice(0, 10)}`}
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
           >
-            {t.label}
+            Today
           </Link>
-        ))}
+          {date && (
+            <Link href={`/production/cutting?status=${status}`} className="text-xs text-neutral-500 underline">
+              Clear
+            </Link>
+          )}
+        </div>
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-xs uppercase text-neutral-500">
-            <tr>
-              <th className="px-3 py-2">ZSPL ID</th>
-              <th className="px-3 py-2">Customer</th>
-              <th className="px-3 py-2">Spec</th>
-              <th className="px-3 py-2 text-right">Wt (MT)</th>
-              <th className="px-3 py-2">Plan Date</th>
-              <th className="px-3 py-2">Approved</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.id} className="border-t border-neutral-100">
-                <td className="px-3 py-2 font-medium">{o.zsplId}</td>
-                <td className="px-3 py-2">{o.customer?.displayName ?? "—"}</td>
-                <td className="px-3 py-2">
-                  {o.thickness.toString()}x{o.width.toString()}
-                  {o.length ? `x${o.length.toString()}` : ""} {o.coating}/{o.temper}
-                </td>
-                <td className="px-3 py-2 text-right">{o.netWt.toString()}</td>
-                <td className="px-3 py-2">
-                  {o.productionPlanDate?.toISOString().slice(0, 10) ?? "—"}
-                </td>
-                <td className="px-3 py-2">{o.approvedBy ?? "—"}</td>
-                <td className="px-3 py-2">
-                  <Link
-                    href={`/production/cutting/${o.id}`}
-                    className="text-xs text-neutral-700 underline"
-                  >
-                    Open
-                  </Link>
-                </td>
-              </tr>
-            ))}
-            {orders.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-neutral-400">
-                  Nothing here.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-4">
+        <DataTable columns={columns} rows={dataRows} />
       </div>
     </div>
   );

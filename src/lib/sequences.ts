@@ -33,6 +33,15 @@ export async function nextZsplSeq(tx: Tx): Promise<number> {
   return rows[0].lastSeq;
 }
 
+export async function nextDoSeq(tx: Tx, fy: string): Promise<number> {
+  const rows = await tx.$queryRaw<{ lastSeq: number }[]>`
+    INSERT INTO "DoSequence" (fy, "lastSeq") VALUES (${fy}, 1)
+    ON CONFLICT (fy) DO UPDATE SET "lastSeq" = "DoSequence"."lastSeq" + 1
+    RETURNING "lastSeq"
+  `;
+  return rows[0].lastSeq;
+}
+
 export async function nextWorkOrderSeq(tx: Tx, year: number): Promise<number> {
   const rows = await tx.$queryRaw<{ lastSeq: number }[]>`
     INSERT INTO "WorkOrderSequence" (year, "lastSeq") VALUES (${year}, 1)

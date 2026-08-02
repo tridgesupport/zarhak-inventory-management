@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canEditPO } from "@/lib/permissions";
 import { encodeIdForUrl } from "@/lib/urlId";
+import { DataTable, type DataTableColumnDef, type DataTableRow } from "@/components/DataTable";
 
 export default async function PurchaseOrdersPage() {
   const session = await auth();
@@ -20,6 +21,70 @@ export default async function PurchaseOrdersPage() {
   const receivedByPo = new Map(
     receivedTotals.map((r) => [r.purchaseOrderId, r._sum.iGrWt ?? 0])
   );
+
+  function statusPill(status: string) {
+    const cls =
+      status === "OPEN"
+        ? "bg-green-100 text-green-800"
+        : status === "IN_PROCESS"
+          ? "bg-blue-100 text-blue-800"
+          : status === "CLOSED"
+            ? "bg-neutral-200 text-neutral-700"
+            : "bg-red-100 text-red-800";
+    return (
+      <span className={`rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
+        {status.replace("_", " ")}
+      </span>
+    );
+  }
+
+  const columns: DataTableColumnDef[] = [
+    { key: "poNumber", header: "PO No." },
+    { key: "poDate", header: "Date" },
+    { key: "vendorName", header: "Vendor", filterable: true },
+    { key: "mill", header: "Mill", filterable: true },
+    { key: "shipTo", header: "Ship To" },
+    { key: "ordered", header: "Ordered (MT)", align: "right" },
+    { key: "received", header: "Received (MT)", align: "right" },
+    { key: "pct", header: "% Recd", align: "right" },
+    { key: "status", header: "Status", filterable: true },
+  ];
+
+  const dataRows: DataTableRow[] = pos.map((po) => {
+    const ordered = po.items.reduce((sum, i) => sum + Number(i.qtyMt), 0);
+    const received = Number(receivedByPo.get(po.id) ?? 0);
+    const pct = ordered > 0 ? (received / ordered) * 100 : 0;
+    const dateStr = po.poDate.toISOString().slice(0, 10);
+    return {
+      key: po.id,
+      cells: {
+        poNumber: (
+          <Link
+            href={`/purchase-orders/${encodeIdForUrl(po.id)}`}
+            className="font-medium text-neutral-900 underline"
+          >
+            {po.poNumber}
+          </Link>
+        ),
+        poDate: dateStr,
+        vendorName: po.vendorName,
+        mill: po.mill,
+        shipTo: po.shipTo,
+        ordered: ordered.toFixed(3),
+        received: received.toFixed(3),
+        pct: `${pct.toFixed(1)}%`,
+        status: statusPill(po.status),
+      },
+      search: {
+        poNumber: po.poNumber,
+        poDate: dateStr,
+        vendorName: po.vendorName,
+        mill: po.mill,
+        shipTo: po.shipTo,
+        status: po.status,
+      },
+    };
+  });
 
   return (
     <div>
@@ -40,59 +105,8 @@ export default async function PurchaseOrdersPage() {
         )}
       </div>
 
-      <div className="mt-6 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-xs uppercase text-neutral-500">
-            <tr>
-              <th className="px-4 py-2">PO No.</th>
-              <th className="px-4 py-2">Date</th>
-              <th className="px-4 py-2">Vendor</th>
-              <th className="px-4 py-2">Mill</th>
-              <th className="px-4 py-2">Ship To</th>
-              <th className="px-4 py-2 text-right">Ordered (MT)</th>
-              <th className="px-4 py-2 text-right">Received (MT)</th>
-              <th className="px-4 py-2 text-right">% Recd</th>
-              <th className="px-4 py-2">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pos.map((po) => {
-              const ordered = po.items.reduce(
-                (sum, i) => sum + Number(i.qtyMt),
-                0
-              );
-              const received = Number(receivedByPo.get(po.id) ?? 0);
-              const pct = ordered > 0 ? (received / ordered) * 100 : 0;
-              return (
-                <tr key={po.id} className="border-t border-neutral-100">
-                  <td className="px-4 py-2">
-                    <Link
-                      href={`/purchase-orders/${encodeIdForUrl(po.id)}`}
-                      className="font-medium text-neutral-900 underline"
-                    >
-                      {po.poNumber}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2">{po.poDate.toISOString().slice(0, 10)}</td>
-                  <td className="px-4 py-2">{po.vendorName}</td>
-                  <td className="px-4 py-2">{po.mill}</td>
-                  <td className="px-4 py-2">{po.shipTo}</td>
-                  <td className="px-4 py-2 text-right">{ordered.toFixed(3)}</td>
-                  <td className="px-4 py-2 text-right">{received.toFixed(3)}</td>
-                  <td className="px-4 py-2 text-right">{pct.toFixed(1)}%</td>
-                  <td className="px-4 py-2">{po.status}</td>
-                </tr>
-              );
-            })}
-            {pos.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-4 py-6 text-center text-neutral-400">
-                  No purchase orders yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-6">
+        <DataTable rows={dataRows} columns={columns} emptyLabel="No purchase orders yet." />
       </div>
     </div>
   );

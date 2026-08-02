@@ -5,9 +5,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { canEditPO } from "@/lib/permissions";
+import { canEditPO, canChangePOStatus } from "@/lib/permissions";
 import { nextPoSeq, fiscalYearFor } from "@/lib/sequences";
 import { encodeIdForUrl } from "@/lib/urlId";
+import { POStatus } from "@/generated/prisma/enums";
 
 const schema = z.object({
   orderType: z.string().min(1),
@@ -71,4 +72,47 @@ export async function createPurchaseOrder(formData: FormData) {
 
   revalidatePath("/purchase-orders");
   redirect(`/purchase-orders/${encodeIdForUrl(po.id)}`);
+}
+
+const transitionPOStatusSchema = z.object({
+  target: z.enum(POStatus),
+});
+
+// Single state-machine entry point for PO status changes, following the same
+// shape as transitionMasterStock — the source app's Open/In Process/Closed field
+// existed but nothing in the webapp ever changed it until now.
+export async function transitionPOStatus(id: string, formData: FormData) {
+  const session = await auth();
+  if (!session?.user || !canChangePOStatus(session.user.role)) {
+    throw new Error("Not authorized");
+  }
+
+  const parsed = transitionPOStatusSchema.safeParse({
+    target: formData.get("target"),
+  });
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues.map((i) => i.message).join(", "));
+  }
+
+  const current = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id } });
+  const changedBy = session.user.email ?? "unknown";
+
+  await prisma.$transaction([
+    prisma.purchaseOrder.update({
+      where: { id },
+      data: { status: parsed.data.target },
+    }),
+    prisma.statusHistory.create({
+      data: {
+        entityType: "PurchaseOrder",
+        entityId: id,
+        fromStatus: current.status,
+        toStatus: parsed.data.target,
+        changedBy,
+      },
+    }),
+  ]);
+
+  revalidatePath("/purchase-orders");
+  revalidatePath(`/purchase-orders/${encodeIdForUrl(id)}`);
 }

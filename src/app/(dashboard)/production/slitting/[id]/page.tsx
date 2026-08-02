@@ -144,7 +144,8 @@ export default async function SlittingOrderDetailPage({
         </div>
       )}
 
-      {canManage && order.productionStatus === "PENDING" && (
+      {canManage &&
+        (order.productionStatus === "PENDING" || order.productionStatus === "IN_PROCESS") && (
         <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-6">
           <h2 className="text-sm font-semibold text-neutral-700">
             Record slitting production

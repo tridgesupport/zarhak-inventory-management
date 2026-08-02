@@ -13,19 +13,37 @@ const TABS = [
 export default async function InwardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; q?: string }>;
 }) {
-  const { filter = "not-reviewed" } = await searchParams;
+  const { filter = "not-reviewed", q = "" } = await searchParams;
   const session = await auth();
   const canUnload = session?.user ? canImportInward(session.user.role) : false;
   const canReviewRole = session?.user ? canReview(session.user.role) : false;
 
-  const where =
+  const statusWhere =
     filter === "reviewed"
       ? { reviewBy: { not: null } }
       : filter === "all"
         ? {}
         : { reviewBy: null };
+
+  const searchWhere = q.trim()
+    ? {
+        OR: [
+          { zsplId: { contains: q.trim(), mode: "insensitive" as const } },
+          { vehicleNo: { contains: q.trim(), mode: "insensitive" as const } },
+          { itemType: { contains: q.trim(), mode: "insensitive" as const } },
+          { vendorName: { contains: q.trim(), mode: "insensitive" as const } },
+          {
+            purchaseOrder: {
+              poNumber: { contains: q.trim(), mode: "insensitive" as const },
+            },
+          },
+        ],
+      }
+    : {};
+
+  const where = { ...statusWhere, ...searchWhere };
 
   const records = await prisma.inwardRecord.findMany({
     where,
@@ -76,20 +94,43 @@ export default async function InwardPage({
         )}
       </div>
 
-      <div className="mt-4 flex gap-2">
-        {TABS.map((t) => (
-          <Link
-            key={t.key}
-            href={`/inward?filter=${t.key}`}
-            className={`rounded-md px-3 py-1.5 text-sm ${
-              filter === t.key
-                ? "bg-neutral-900 text-white"
-                : "bg-white text-neutral-700 border border-neutral-200"
-            }`}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-2">
+          {TABS.map((t) => (
+            <Link
+              key={t.key}
+              href={`/inward?filter=${t.key}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+              className={`rounded-md px-3 py-1.5 text-sm ${
+                filter === t.key
+                  ? "bg-neutral-900 text-white"
+                  : "bg-white text-neutral-700 border border-neutral-200"
+              }`}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </div>
+        <form action="/inward" method="get" className="flex items-center gap-2">
+          <input type="hidden" name="filter" value={filter} />
+          <input
+            type="text"
+            name="q"
+            defaultValue={q}
+            placeholder="Search ZSPL ID, PO No., vehicle, vendor…"
+            className="w-64 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          />
+          <button
+            type="submit"
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
           >
-            {t.label}
-          </Link>
-        ))}
+            Search
+          </button>
+          {q && (
+            <Link href={`/inward?filter=${filter}`} className="text-xs text-neutral-500 underline">
+              Clear
+            </Link>
+          )}
+        </form>
       </div>
 
       <div className="mt-4 space-y-3">

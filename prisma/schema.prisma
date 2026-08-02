@@ -175,12 +175,20 @@ model ZsplSequence {
   lastSeq Int    @default(0)
 }
 
+// Powers the Dispatch wizard's auto-assigned DO number (ZSPL/DO/{fy}/{seq}) — replaces
+// the old free-text-per-form DO number entry with a single guaranteed-unique sequence.
+model DoSequence {
+  fy      String @id
+  lastSeq Int    @default(0)
+}
+
 // ---------------------------------------------------------------------------
 // Procurement
 // ---------------------------------------------------------------------------
 
 enum POStatus {
   OPEN
+  IN_PROCESS
   CLOSED
   CANCELLED
 }
@@ -647,6 +655,7 @@ model BundlewiseData {
 
 enum SlittingProductionStatus {
   PENDING
+  IN_PROCESS
   COMPLETED
 }
 

@@ -1,13 +1,44 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canDispatch } from "@/lib/permissions";
 import { removeFromDispatch, createPackingList } from "./actions";
+import { DataTable, type DataTableColumnDef } from "@/components/DataTable";
 
-export default async function DispatchSummaryPage() {
+function itemColumns(canManage: boolean): DataTableColumnDef[] {
+  const cols: DataTableColumnDef[] = [
+    { key: "zsplId", header: "ZSPL ID" },
+    { key: "spec", header: "Spec" },
+    { key: "netWeight", header: "Net Wt", align: "right" },
+  ];
+  if (canManage) cols.push({ key: "remove", header: "" });
+  return cols;
+}
+
+function dayRange(dateStr: string) {
+  const start = new Date(`${dateStr}T00:00:00.000Z`);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { gte: start, lt: end };
+}
+
+function shiftDate(dateStr: string, days: number) {
+  const d = new Date(`${dateStr}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export default async function DispatchSummaryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  const { date } = await searchParams;
   const session = await auth();
   const canManage = session?.user ? canDispatch(session.user.role) : false;
 
   const rows = await prisma.dispatchSummary.findMany({
+    where: date ? { doDate: dayRange(date) } : {},
     orderBy: [{ doNumber: "desc" }, { createdAt: "desc" }],
     include: { customer: true, buyer: true, consignee: true },
     take: 500,
@@ -22,11 +53,68 @@ export default async function DispatchSummaryPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-neutral-900">Dispatch Summary</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Items consolidated from Cutting/Slitting/Trading Finished Goods, grouped by DO
-        number. Removing an item here sends it back to its Finished Goods screen.
-      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-900">Dispatch Summary</h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Items consolidated from Cutting/Slitting/Trading Finished Goods, grouped by DO
+            number. Removing an item here sends it back to its Finished Goods screen.
+          </p>
+        </div>
+        {canManage && (
+          <Link
+            href="/dispatch/new"
+            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            New Dispatch
+          </Link>
+        )}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-neutral-500">DO date:</span>
+        {date && (
+          <Link
+            href={`/dispatch?date=${shiftDate(date, -1)}`}
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+          >
+            ← Prev
+          </Link>
+        )}
+        <form action="/dispatch" method="get" className="flex items-center gap-1">
+          <input
+            type="date"
+            name="date"
+            defaultValue={date ?? ""}
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
+          />
+          <button
+            type="submit"
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+          >
+            Go
+          </button>
+        </form>
+        {date && (
+          <Link
+            href={`/dispatch?date=${shiftDate(date, 1)}`}
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+          >
+            Next →
+          </Link>
+        )}
+        <Link
+          href={`/dispatch?date=${new Date().toISOString().slice(0, 10)}`}
+          className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+        >
+          Today
+        </Link>
+        {date && (
+          <Link href="/dispatch" className="text-xs text-neutral-500 underline">
+            Clear
+          </Link>
+        )}
+      </div>
 
       <div className="mt-4 space-y-4">
         {[...groups.entries()].map(([doNumber, items]) => (
@@ -61,41 +149,33 @@ export default async function DispatchSummaryPage() {
                 )}
               </div>
             </div>
-            <table className="mt-2 min-w-full text-sm">
-              <thead className="text-left text-xs uppercase text-neutral-500">
-                <tr>
-                  <th className="py-1">ZSPL ID</th>
-                  <th className="py-1">Spec</th>
-                  <th className="py-1 text-right">Net Wt</th>
-                  <th className="py-1"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it) => (
-                  <tr key={it.id} className="border-t border-neutral-100">
-                    <td className="py-1">{it.finalZsplId}</td>
-                    <td className="py-1">
-                      {it.itemType} {it.thickness?.toString()}x{it.width?.toString()}
-                      {it.cutLength ? `x${it.cutLength.toString()}` : ""} {it.coating}/
-                      {it.temper}
-                    </td>
-                    <td className="py-1 text-right">{it.netWeight?.toString() ?? "—"}</td>
-                    <td className="py-1">
-                      {canManage && (
+            <div className="mt-2">
+              <DataTable
+                columns={itemColumns(canManage)}
+                rows={items.map((it) => {
+                  const spec = `${it.itemType} ${it.thickness?.toString()}x${it.width?.toString()}${it.cutLength ? `x${it.cutLength.toString()}` : ""} ${it.coating}/${it.temper}`;
+                  return {
+                    key: it.id,
+                    cells: {
+                      zsplId: it.finalZsplId,
+                      spec,
+                      netWeight: it.netWeight?.toString() ?? "—",
+                      remove: canManage ? (
                         <form action={removeFromDispatch.bind(null, it.id)}>
-                          <button
-                            type="submit"
-                            className="text-xs text-red-600 underline"
-                          >
+                          <button type="submit" className="text-xs text-red-600 underline">
                             Remove
                           </button>
                         </form>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      ) : null,
+                    },
+                    search: {
+                      zsplId: it.finalZsplId ?? "",
+                      spec,
+                    },
+                  };
+                })}
+              />
+            </div>
           </div>
         ))}
         {groups.size === 0 && (

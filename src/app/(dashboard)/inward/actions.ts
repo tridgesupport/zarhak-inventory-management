@@ -54,10 +54,18 @@ export async function resolveMatch(inwardId: string, itemDetailId: string) {
     throw new Error("Not authorized");
   }
 
-  await prisma.inwardRecord.update({
-    where: { id: inwardId },
-    data: { matchedItemId: itemDetailId },
-  });
+  await prisma.$transaction([
+    prisma.inwardRecord.update({
+      where: { id: inwardId },
+      data: { matchedItemId: itemDetailId },
+    }),
+    // Item Details status was defined (pending/matched/received) but never set anywhere
+    // — wire the "matched" transition to the moment a match is actually resolved.
+    prisma.itemDetail.update({
+      where: { id: itemDetailId },
+      data: { itemStatus: "MATCHED" },
+    }),
+  ]);
 
   revalidatePath("/inward");
 }
@@ -88,6 +96,13 @@ export async function markReviewed(inwardId: string) {
     const matchedItem = inward.matchedItemId
       ? await tx.itemDetail.findUnique({ where: { id: inward.matchedItemId } })
       : null;
+
+    if (matchedItem) {
+      await tx.itemDetail.update({
+        where: { id: matchedItem.id },
+        data: { itemStatus: "RECEIVED" },
+      });
+    }
 
     // Replaces the AppSheet "transfer data from inward to master stock" bot —
     // done synchronously in the same transaction instead of an async webhook.

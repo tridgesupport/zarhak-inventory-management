@@ -111,6 +111,15 @@ export async function addSlittingProduction(slittingOrderId: string, formData: F
     })),
   });
 
+  // First production row for this order moves it out of Pending — mirrors how
+  // Cutting's productionStatus already reacts to production data being recorded.
+  if (order.productionStatus === "PENDING") {
+    await prisma.slittingOrderSummary.update({
+      where: { id: slittingOrderId },
+      data: { productionStatus: "IN_PROCESS" },
+    });
+  }
+
   await createNotification({
     message: `${ids.length} Slitting Production Data record(s) created for ${order.zsplId}`,
     link: `/production/slitting/${slittingOrderId}`,

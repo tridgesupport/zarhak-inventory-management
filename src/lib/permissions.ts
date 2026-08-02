@@ -16,6 +16,10 @@ export function canEditPO(role: Role) {
   return role === "ADMIN" || role === "PROCUREMENT";
 }
 
+export function canChangePOStatus(role: Role) {
+  return role === "ADMIN" || role === "PROCUREMENT";
+}
+
 export function canImportItemDetails(role: Role) {
   return role === "ADMIN" || role === "PROCUREMENT";
 }

@@ -14,6 +14,7 @@ const NAV_ITEMS: { href: string; label: string }[] = [
   { href: "/production/slitting", label: "Slitting Orders" },
   { href: "/production/finished-goods/slitting", label: "FG Slitting" },
   { href: "/production/trading", label: "Trading Summary" },
+  { href: "/production/scrap", label: "Scrap Material" },
   { href: "/dispatch", label: "Dispatch Summary" },
   { href: "/masters/customers", label: "Customers" },
   { href: "/masters/transporters", label: "Transporters" },

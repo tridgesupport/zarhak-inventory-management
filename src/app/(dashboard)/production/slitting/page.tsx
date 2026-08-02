@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { SlittingProductionStatus } from "@/generated/prisma/enums";
+import { DataTable, type DataTableColumnDef, type DataTableRow } from "@/components/DataTable";
 
 const TABS: { key: SlittingProductionStatus | "ALL"; label: string }[] = [
   { key: "PENDING", label: "Pending" },
+  { key: "IN_PROCESS", label: "In Process" },
   { key: "COMPLETED", label: "Completed" },
   { key: "ALL", label: "All" },
 ];
@@ -22,6 +24,44 @@ export default async function SlittingOrderSummaryPage({
     orderBy: { createdAt: "desc" },
     include: { customer: { select: { displayName: true } } },
     take: 200,
+  });
+
+  const columns: DataTableColumnDef[] = [
+    { key: "zsplId", header: "ZSPL ID" },
+    { key: "customer", header: "Customer", filterable: true },
+    { key: "spec", header: "Spec" },
+    { key: "netWt", header: "Wt (MT)", align: "right" },
+    { key: "vendor", header: "Vendor", filterable: true },
+    { key: "open", header: "" },
+  ];
+
+  const dataRows: DataTableRow[] = orders.map((o) => {
+    const spec = `${o.thickness.toString()}x${o.width.toString()} ${o.coating}/${o.temper}`;
+    const customerName = o.customer?.displayName ?? "—";
+    return {
+      key: o.id,
+      cells: {
+        zsplId: <span className="font-medium">{o.zsplId}</span>,
+        customer: customerName,
+        spec,
+        netWt: o.netWt.toString(),
+        vendor: o.vendorName ?? "—",
+        open: (
+          <Link
+            href={`/production/slitting/${o.id}`}
+            className="text-xs text-neutral-700 underline"
+          >
+            Open
+          </Link>
+        ),
+      },
+      search: {
+        zsplId: o.zsplId,
+        customer: customerName,
+        spec,
+        vendor: o.vendorName ?? "",
+      },
+    };
   });
 
   return (
@@ -47,47 +87,8 @@ export default async function SlittingOrderSummaryPage({
         ))}
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-xs uppercase text-neutral-500">
-            <tr>
-              <th className="px-3 py-2">ZSPL ID</th>
-              <th className="px-3 py-2">Customer</th>
-              <th className="px-3 py-2">Spec</th>
-              <th className="px-3 py-2 text-right">Wt (MT)</th>
-              <th className="px-3 py-2">Vendor</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.id} className="border-t border-neutral-100">
-                <td className="px-3 py-2 font-medium">{o.zsplId}</td>
-                <td className="px-3 py-2">{o.customer?.displayName ?? "—"}</td>
-                <td className="px-3 py-2">
-                  {o.thickness.toString()}x{o.width.toString()} {o.coating}/{o.temper}
-                </td>
-                <td className="px-3 py-2 text-right">{o.netWt.toString()}</td>
-                <td className="px-3 py-2">{o.vendorName ?? "—"}</td>
-                <td className="px-3 py-2">
-                  <Link
-                    href={`/production/slitting/${o.id}`}
-                    className="text-xs text-neutral-700 underline"
-                  >
-                    Open
-                  </Link>
-                </td>
-              </tr>
-            ))}
-            {orders.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-neutral-400">
-                  Nothing here.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-4">
+        <DataTable columns={columns} rows={dataRows} />
       </div>
     </div>
   );

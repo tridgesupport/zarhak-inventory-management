@@ -4,7 +4,6 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canManageProduction, canDispatch } from "@/lib/permissions";
 import { updateTradingDispatchInfo } from "../actions";
-import { dispatchTradingRow } from "@/app/(dashboard)/dispatch/actions";
 
 export default async function TradingDetailPage({
   params,
@@ -22,10 +21,6 @@ export default async function TradingDetailPage({
   });
   if (!row) notFound();
 
-  const [customers, transporters] = await Promise.all([
-    prisma.customer.findMany({ orderBy: { displayName: "asc" } }),
-    prisma.transporter.findMany({ orderBy: { name: "asc" } }),
-  ]);
   const alreadyDispatched = row.dispatchSummaries.length > 0;
 
   return (
@@ -112,56 +107,16 @@ export default async function TradingDetailPage({
 
       {canSend && !alreadyDispatched && (
         <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-6">
-          <h2 className="text-sm font-semibold text-neutral-700">Send to Dispatch</h2>
-          <form
-            action={dispatchTradingRow.bind(null, row.id)}
-            className="mt-2 flex flex-wrap items-end gap-2"
+          <h2 className="text-sm font-semibold text-neutral-700">Dispatch</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Not yet assigned to a dispatch.
+          </p>
+          <Link
+            href="/dispatch/new"
+            className="mt-3 inline-block rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
           >
-            <input
-              name="doNumber"
-              placeholder="DO Number"
-              required
-              className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
-            />
-            <input
-              name="doDate"
-              type="date"
-              className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
-            />
-            <select
-              name="buyerId"
-              className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
-            >
-              <option value="">Buyer…</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.displayName}
-                </option>
-              ))}
-            </select>
-            <select
-              name="transporterName"
-              className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
-            >
-              <option value="">Transporter…</option>
-              {transporters.map((t) => (
-                <option key={t.id} value={t.name}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-            <input
-              name="vehicleNumber"
-              placeholder="Vehicle No."
-              className="w-24 rounded-md border border-neutral-300 px-2 py-1 text-xs"
-            />
-            <button
-              type="submit"
-              className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-800"
-            >
-              Send to Dispatch
-            </button>
-          </form>
+            Create Dispatch
+          </Link>
         </div>
       )}
       {alreadyDispatched && (
